@@ -34,7 +34,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable, Mapping, Optional, P
 # Third-Party
 import anyio
 import httpx
-from mcp import ClientSession, McpError
+from mcp import ClientSession, MCPError
 from mcp.client.sse import sse_client
 from mcpgateway.utils.streamable_http_compat import streamable_http_client
 from mcp.shared.session import RequestResponder
