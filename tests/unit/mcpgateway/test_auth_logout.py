@@ -78,9 +78,9 @@ def setup_test_db(test_engine, test_session_factory):
     original_engine = mcpgateway.db.engine
     mcpgateway.db.SessionLocal = test_session_factory
     mcpgateway.db.engine = test_engine
-    
+
     yield
-    
+
     mcpgateway.db.SessionLocal = original_session_local
     mcpgateway.db.engine = original_engine
 
