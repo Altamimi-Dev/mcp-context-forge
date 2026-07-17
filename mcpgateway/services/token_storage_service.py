@@ -408,10 +408,23 @@ class TokenStorageService:
                         logger.warning("Configured resource was empty and removed during refresh: %s", existing_resource)
                     oauth_config["resource"] = normalized
             elif gateway.url:
-                # Derive from gateway.url if not explicitly configured (strip query)
-                oauth_config["resource"] = normalize_resource(gateway.url)
-                if not oauth_config.get("resource"):
-                    logger.warning("Gateway URL is empty, skipping resource parameter: %s", gateway.url)
+                # Derive the ORIGIN (scheme + netloc), matching what oauth_router
+                # sends on the initial authorization + callback exchanges. Using
+                # the full URL here would ship a different `resource` on refresh
+                # than the IdP saw at login, causing the refresh to fail or mint
+                # a token whose aud no longer matches the audience the user
+                # already validated against.
+                # First-Party
+                from mcpgateway.services.token_validation_service import _derive_resource_origin  # pylint: disable=import-outside-toplevel
+
+                derived_origin = _derive_resource_origin(gateway.url)
+                if derived_origin:
+                    oauth_config["resource"] = derived_origin
+                else:
+                    logger.warning(
+                        "Cannot derive resource origin from gateway URL (URN or scheme-less), skipping resource parameter: %s",
+                        gateway.url,
+                    )
 
             # Use OAuthManager to refresh the token
             # First-Party
