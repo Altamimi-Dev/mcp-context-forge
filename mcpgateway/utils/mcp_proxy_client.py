@@ -24,8 +24,7 @@ import httpx2
 import logging
 from typing import TYPE_CHECKING, Callable
 
-if TYPE_CHECKING:
-    from mcp import Client
+from mcp import Client
 
 logger = logging.getLogger(__name__)
 
