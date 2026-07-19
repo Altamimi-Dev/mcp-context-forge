@@ -8563,7 +8563,7 @@ class TestInvokeToolDirect:
         @asynccontextmanager
         async def mock_streamable_client(*_args, **kwargs):
             captured_headers.update(kwargs["headers"])
-            yield ("read", "write", None)
+            yield session_mock
 
         with (
             patch("mcpgateway.services.tool_service.fresh_db_session", self._make_fresh_db_session(mock_direct_gateway)),
@@ -8571,7 +8571,7 @@ class TestInvokeToolDirect:
             patch("mcpgateway.services.tool_service.check_gateway_access", new_callable=AsyncMock, return_value=True),
             patch("mcpgateway.services.tool_service.build_gateway_auth_headers", return_value={}),
             patch("mcpgateway.services.tool_service.inject_trace_context_headers", side_effect=inject_headers),
-            patch("mcpgateway.services.tool_service.streamablehttp_client", mock_streamable_client),
+            patch("mcpgateway.services.tool_service.mcp_proxy_client", mock_streamable_client),
             patch("mcpgateway.services.tool_service.ClientSession", return_value=client_session_cm),
         ):
             mock_settings.mcpgateway_direct_proxy_enabled = True

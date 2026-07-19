@@ -20,7 +20,7 @@ Usage::
 from __future__ import annotations
 
 import contextlib
-import httpx
+import httpx2
 import logging
 from typing import TYPE_CHECKING, Callable
 
@@ -41,14 +41,14 @@ async def mcp_proxy_client(
     url: str,
     headers: dict[str, str] | None = None,
     timeout: float = 30.0,
-    httpx_client_factory: Callable[..., httpx.AsyncClient] | None = None,
+    httpx_client_factory: Callable[..., httpx2.AsyncClient] | None = None,
 ) -> "Client":  # type: ignore[misc]
     """Yield an MCP v2 ``Client`` connected via streamable-http transport.
 
     The ``Client`` auto-initializes (via ``initialize()`` or auto-negotiation)
     before ``yield`` returns.  No manual ``session.initialize()`` call needed.
 
-    The underlying ``httpx.AsyncClient`` stays alive for the transport's
+    The underlying ``httpx2.AsyncClient`` stays alive for the transport's
     lifetime because the transport holds a reference to it.
 
     Args:
@@ -56,7 +56,7 @@ async def mcp_proxy_client(
         headers: HTTP headers to include in the request.
         timeout: Overall timeout for operations (passed through to factory).
         httpx_client_factory: Optional callable returning a configured
-            ``httpx.AsyncClient``.  Receives keyword args
+            ``httpx2.AsyncClient``.  Receives keyword args
             ``(headers, timeout, auth)`` matching the compat wrapper.
 
     Yields:
@@ -70,16 +70,16 @@ async def mcp_proxy_client(
             http_client = httpx_client_factory(headers=headers, timeout=timeout, auth=None)
         except Exception as exc:
             raise RuntimeError(
-                f"Failed to create httpx.AsyncClient: {exc}"
+                f"Failed to create httpx2.AsyncClient: {exc}"
             ) from exc
     else:
         # Use sensible timeout defaults for MCP transport.
         # Connect: keep short to fail fast.  Read: must cover the full RPC.
         connect_timeout = min(timeout, 10.0)
         read_timeout = max(timeout, 30.0)
-        http_client = httpx.AsyncClient(
+        http_client = httpx2.AsyncClient(
             headers=headers or {},
-            timeout=httpx.Timeout(
+            timeout=httpx2.Timeout(
                 connect=connect_timeout,
                 read=read_timeout,
             ),

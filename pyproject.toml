@@ -75,10 +75,13 @@ cpex-retry-with-backoff = "2026-07-15T23:59:59Z"
 # and tests/e2e/test_otel_plugin_metadata_e2e.py depend on. Vetted ahead of the usual window
 # for both reasons.
 cpex-secrets-detection = "2026-07-15T23:59:59Z"
+mcp = "2026-07-19T23:59:59Z"
+mcp-types = "2026-07-19T23:59:59Z"
 
 [tool.uv.sources]
 compliance-reference-server = { path = "mcp-servers/python/compliance_reference_server", editable = true }
 cpex = { git = "https://github.com/contextforge-org/cpex", branch = "0.1.x-mcp-2.0.0" }
+# cpex = { git = "https://github.com/contextforge-org/cpex", rev = "eac9437188734a72a2277177de87bca62d2badac" }  # mcp v 2.0.0b1
 
 # ----------------------------------------------------------------
 # 📦 Core project metadata (PEP 621)
@@ -124,7 +127,6 @@ dependencies = [
     "base58>=2.1.1",
     "brotli>=1.2.0",
     "click>=8.4.2", # Transitive pin
-    "cpex>=0.1.1",
     "cryptography>=49.0.0",
     "fastapi>=0.139.0",
     "filelock>=3.29.4,<3.31.0", # verified against 3.30.0's fork-safety guard (gateway_service.py rebuilds post-fork); ceiling caps unknown future releases
@@ -253,9 +255,9 @@ dev = [
 # Pins the MCP SDK the gateway runtime depends on. Mutually exclusive with
 # `live-tests` (see `[tool.uv]` conflicts) — pick exactly one per env.
 runtime = [
-    "cpex",
-    "mcp==2.0.0b1",
-    "mcp-types==2.0.0b1",
+    "cpex>=0.1.1",
+    "mcp==2.0.0b2",
+    "mcp-types==2.0.0b2",
 ]
 
 # Protocol-compliance test harness. Pulls `fastmcp` (transitively `mcp<2.0`)

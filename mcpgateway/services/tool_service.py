@@ -3771,10 +3771,11 @@ class ToolService(BaseService):
                             "contextforge.runtime": "python",
                         },
                     ):
+                        request_meta_data = _sync_meta_traceparent(meta_data, traced_headers)  # noqa: F841 -- used in call_tool below
                         # Call tool with meta if provided
-                        if meta_data:
-                            logger.debug("Forwarding _meta to remote gateway: %s", meta_data)
-                            tool_result = await client.call_tool(name=remote_name, arguments=arguments, meta=meta_data)
+                        if request_meta_data:
+                            logger.debug("Forwarding _meta to remote gateway: %s", request_meta_data)
+                            tool_result = await client.call_tool(name=remote_name, arguments=arguments, meta=request_meta_data)
                         else:
                             tool_result = await client.call_tool(name=remote_name, arguments=arguments)
                     with create_span(
@@ -6112,7 +6113,7 @@ class ToolService(BaseService):
                                             },
                                         ):
                                             with anyio.fail_after(effective_timeout):
-                                                tool_call_result = await client.call_tool(tool_name_original, arguments, meta=meta_data)
+                                                tool_call_result = await client.call_tool(tool_name_original, arguments, meta=request_meta_data)
                                         with create_span(
                                             "mcp.client.response",
                                             {

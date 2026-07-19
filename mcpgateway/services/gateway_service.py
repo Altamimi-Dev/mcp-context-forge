@@ -58,6 +58,7 @@ import uuid
 # Third-Party
 from filelock import FileLock, Timeout
 import httpx
+import httpx2
 from mcp import ClientSession
 from mcp.client.sse import sse_client
 from mcpgateway.utils.mcp_proxy_client import mcp_proxy_client
@@ -4585,13 +4586,13 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
                 Returns:
                     httpx.AsyncClient: Configured HTTPX async client
                 """
-                return httpx.AsyncClient(
-                    verify=ssl_context if ssl_context else get_default_verify(),
-                    follow_redirects=False,
-                    headers=headers,
-                    timeout=timeout if timeout else get_http_timeout(),
-                    auth=auth,
-                    limits=httpx.Limits(
+            return httpx2.AsyncClient(
+                verify=ctx if ctx else get_default_verify(),
+                follow_redirects=False,
+                headers=headers,
+                timeout=timeout if timeout else get_http_timeout(),
+                auth=auth,
+                limits=httpx2.Limits(
                         max_connections=settings.httpx_max_connections,
                         max_keepalive_connections=settings.httpx_max_keepalive_connections,
                         keepalive_expiry=settings.httpx_keepalive_expiry,
@@ -6911,13 +6912,13 @@ class GatewayService(BaseService):  # pylint: disable=too-many-instance-attribut
             else:
                 ctx = None
 
-            return httpx.AsyncClient(
+            return httpx2.AsyncClient(
                 verify=ctx if ctx else get_default_verify(),
                 follow_redirects=False,
                 headers=headers,
                 timeout=timeout if timeout else get_http_timeout(),
                 auth=auth,
-                limits=httpx.Limits(
+                limits=httpx2.Limits(
                     max_connections=settings.httpx_max_connections,
                     max_keepalive_connections=settings.httpx_max_keepalive_connections,
                     keepalive_expiry=settings.httpx_keepalive_expiry,
