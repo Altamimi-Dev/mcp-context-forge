@@ -85,11 +85,8 @@ async def mcp_proxy_client(
         )
 
     async with http_client:
-        # streamable_http_client is an async generator, context-manager usable.
-        # The transport needs the http_client alive for its entire lifetime.
-        scm = streamable_http_client(url, http_client=http_client)
-        async with scm as streams:
-            transport = streams
-            client = Client(read_stream=transport[0], write_stream=transport[1])
-            async with client:
-                yield client
+        # SDK b1: Client takes the transport context manager directly.
+        # It owns the transport lifecycle and performs auto-initialization.
+        transport = streamable_http_client(url, http_client=http_client)
+        async with Client(transport) as client:
+            yield client
