@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Popup-Based OAuth Authorization Flow** ([#5660](https://github.com/IBM/mcp-context-forge/issues/5660)) - `GET /oauth/authorize/{gateway_id}` accepts an optional `popup` query parameter that prefixes the generated state token with `popup.`. `GET /oauth/callback` detects the prefix and, for both success and every error path (provider error, missing code, invalid state, `OAuthError`, unexpected exception), responds with a minimal CSP-nonce'd `postMessage` script instead of the full HTML admin page, so a React UI can drive the flow in a popup window without a parent-page navigation. Non-popup flows keep the existing full HTML response unchanged.
+
 
 ## [1.0.6] - 2026-07-22 - OAuth Token Exchange, Vault Credentials, MCP Apps, Dataplane Publishing, and Security Hardening
 
