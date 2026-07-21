@@ -205,13 +205,17 @@ _sdk_drift_warning_emitted = False  # pylint: disable=invalid-name
 
 
 def _mcp_transport_is_broken(session: ClientSession) -> bool:
-    """Peek at a ``ClientSession``'s internal anyio streams to detect a dead transport.
+    """Peek at a ``ClientSession``'s internal state to detect a dead transport.
 
-    Returns True only when we can positively confirm the transport is gone
-    (closed write stream, or receive channels fully drained). Returns False on
-    any ambiguity — including when SDK internals have shifted shape — so that
-    callers degrade to owner-task liveness rather than evicting a session
-    that might still be usable.
+    Client-built sessions (via ``mcp.client.Client``) carry a ``_dispatcher``
+    whose ``_closed`` / ``_running`` flags are the definitive dead signals.
+    Raw-constructed sessions (read/write streams passed directly) keep the legacy
+    ``_write_stream._closed`` / ``._state.open_receive_channels`` probe.
+
+    Returns True only when we can positively confirm the transport is gone.
+    Returns False on any ambiguity — including when SDK internals have shifted
+    shape — so that callers degrade to owner-task liveness rather than evicting
+    a session that might still be usable.
 
     Validated MCP SDK range lives in
     ``_MCP_SDK_TRANSPORT_PROBE_COMPATIBLE_VERSIONS``; bump that marker after
@@ -219,6 +223,19 @@ def _mcp_transport_is_broken(session: ClientSession) -> bool:
     """
     global _sdk_drift_warning_emitted  # pylint: disable=global-statement
     try:
+        # Dispatcher path — present on Client-built sessions (mcp.client.Client).
+        # _closed is set by send_raw_request on error; _running flips False at teardown.
+        dispatcher = getattr(session, "_dispatcher", None)
+        if dispatcher is not None:
+            if getattr(dispatcher, "_closed", False) is True:
+                return True
+            if getattr(dispatcher, "_running", True) is False:
+                # Was running, now stopped (teardown in progress/complete) → broken
+                return True
+            # Dispatcher present and healthy — never consult _write_stream
+            return False
+
+        # Legacy raw-session path: read/write streams passed directly, no _dispatcher.
         write_stream = getattr(session, "_write_stream", None)
         if write_stream is None:
             return False

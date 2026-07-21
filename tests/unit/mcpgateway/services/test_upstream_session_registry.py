@@ -957,6 +957,124 @@ def test_mcp_transport_is_broken_first_drift_logs_warning_then_degrades_to_debug
     assert any(rec.levelname == "DEBUG" and "MCP transport-broken probe raised" in rec.getMessage() for rec in caplog.records)
 
 
+def test_mcp_transport_is_broken_detects_closed_dispatcher():
+    """ClientSession built by ``mcp.client.Client`` carries a ``_dispatcher``
+    whose ``_closed`` is the definitive dead flag (checked by ``send_raw_request``).
+    When ``_dispatcher._closed is True`` the transport is broken."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _Dispatcher:
+        _closed = True
+        _running = False  # also False at teardown; _closed alone is sufficient
+
+    class _Session:
+        _dispatcher = _Dispatcher()
+        # No _write_stream — Client-built sessions don't have that attribute
+
+    assert _mcp_transport_is_broken(_Session()) is True  # type: ignore[arg-type]
+
+
+def test_mcp_transport_is_broken_detects_stopped_dispatcher():
+    """A dispatcher that has been running and is now stopped (but not yet closed)
+    also indicates a broken transport — ``_running`` flips to ``False`` at teardown
+    before ``_closed`` is set, so both flags are meaningful dead signals."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _Dispatcher:
+        _closed = False  # teardown sequence: _running=False first, then _closed=True
+        _running = False
+
+    class _Session:
+        _dispatcher = _Dispatcher()
+        # No _write_stream
+
+    assert _mcp_transport_is_broken(_Session()) is True  # type: ignore[arg-type]
+
+
+def test_mcp_transport_is_broken_prefers_dispatcher_over_write_stream():
+    """When BOTH ``_dispatcher`` and ``_write_stream`` are present, the dispatcher
+    path takes priority — ``_write_stream`` must never be consulted for a
+    Client-built session.  Dead dispatcher + healthy write_stream → broken."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _HealthyStream:
+        _closed = False
+
+        class _State:
+            open_receive_channels = 1  # healthy
+
+        _state = _State()
+
+    class _DeadDispatcher:
+        _closed = True
+        _running = False
+
+    class _Session:
+        _dispatcher = _DeadDispatcher()
+        _write_stream = _HealthyStream()  # would return False if consulted
+
+    # The dispatcher is dead, so the transport is broken — write_stream is irrelevant
+    assert _mcp_transport_is_broken(_Session()) is True  # type: ignore[arg-type]
+
+
+def test_mcp_transport_is_broken_healthy_dispatcher_ignores_write_stream():
+    """When dispatcher is present and healthy, the write_stream probe is skipped.
+    This verifies that a healthy dispatcher + dead write_stream does NOT report broken."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _DeadStream:
+        _closed = True  # would be broken if consulted
+
+        class _State:
+            open_receive_channels = 0
+
+        _state = _State()
+
+    class _HealthyDispatcher:
+        _closed = False
+        _running = True
+
+    class _Session:
+        _dispatcher = _HealthyDispatcher()
+        _write_stream = _DeadStream()  # dead, but dispatcher is healthy so skip it
+
+    # Dispatcher is healthy → transport is NOT broken, despite dead write_stream
+    assert _mcp_transport_is_broken(_Session()) is False  # type: ignore[arg-type]
+
+
+def test_mcp_transport_is_broken_raw_session_without_dispatcher_uses_write_stream():
+    """Raw-constructed sessions (built with read/write streams, no ``_dispatcher``)
+    must still work with the legacy ``_write_stream`` probe exactly as before."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _Stream:
+        _closed = True  # legacy broken signal
+
+    class _Session:
+        _write_stream = _Stream()
+        # No _dispatcher
+
+    assert _mcp_transport_is_broken(_Session()) is True  # type: ignore[arg-type]
+
+
+def test_mcp_transport_is_broken_neither_attribute_returns_false():
+    """When neither ``_dispatcher`` nor ``_write_stream`` is present, the probe
+    cannot determine brokenness → returns ``False`` (graceful degradation)."""
+    # First-Party
+    from mcpgateway.services.upstream_session_registry import _mcp_transport_is_broken
+
+    class _Bare:
+        pass  # no _dispatcher, no _write_stream
+
+    # The bare session: getattr("_write_stream") returns None → early return False
+    assert _mcp_transport_is_broken(_Bare()) is False  # type: ignore[arg-type]
+
+
 # ---------------------------------------------------------------------------
 # SessionCreateRequest validation
 # ---------------------------------------------------------------------------
