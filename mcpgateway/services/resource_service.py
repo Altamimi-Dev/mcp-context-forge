@@ -37,7 +37,6 @@ import uuid
 import httpx
 from mcp import ClientSession
 import mcp_types as types
-from mcp.client.sse import sse_client
 from mcpgateway.utils.mcp_proxy_client import mcp_proxy_client
 from mcp_types import ReadResourceRequest, ReadResourceRequestParams
 import parse
@@ -2099,14 +2098,15 @@ class ResourceService(BaseService):
                                         resource_received = True
                                 else:
                                     # Fallback: per-call session when no downstream session id is in scope.
-                                    async with sse_client(url=server_url, headers=authentication, timeout=settings.health_check_timeout, httpx_client_factory=_get_httpx_client_factory) as (
-                                        read_stream,
-                                        write_stream,
-                                    ):
-                                        async with ClientSession(read_stream, write_stream) as session:
-                                            _ = await session.initialize()
-                                            resource_text = await _read_resource_text_with_retry(session, uri, "SSE")
-                                            resource_received = True
+                                    async with mcp_proxy_client(
+                                        url=server_url,
+                                        headers=authentication,
+                                        timeout=settings.health_check_timeout,
+                                        httpx_client_factory=_get_httpx_client_factory,
+                                        transport="sse",
+                                    ) as client:
+                                        resource_text = await _read_resource_text_with_retry(client.session, uri, "SSE")
+                                        resource_received = True
                             except Exception as e:
                                 # Sanitize error message to prevent URL secrets from leaking in logs
                                 sanitized_error = sanitize_exception_message(str(e), auth_query_params_decrypted)

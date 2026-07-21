@@ -29,7 +29,6 @@ from jinja2.exceptions import SecurityError as JinjaSecurityError
 from jinja2.sandbox import SandboxedEnvironment
 from mcp import ClientSession
 import mcp_types as types
-from mcp.client.sse import sse_client
 from mcpgateway.utils.mcp_proxy_client import mcp_proxy_client
 from mcp_types import GetPromptRequest, GetPromptRequestParams
 import orjson
@@ -449,10 +448,13 @@ class PromptService(BaseService):
                         )
 
             if transport == "sse":
-                async with sse_client(url=gateway_url, headers=headers, timeout=settings.health_check_timeout) as streams:
-                    async with ClientSession(*streams) as session:
-                        await session.initialize()
-                        remote_result = await _get_prompt_with_meta(session, remote_name, prompt_arguments, meta_data)
+                async with mcp_proxy_client(
+                    url=gateway_url,
+                    headers=headers,
+                    timeout=settings.health_check_timeout,
+                    transport="sse",
+                ) as client:
+                    remote_result = await _get_prompt_with_meta(client.session, remote_name, prompt_arguments, meta_data)
             else:
                 async with mcp_proxy_client(
                     url=gateway_url,

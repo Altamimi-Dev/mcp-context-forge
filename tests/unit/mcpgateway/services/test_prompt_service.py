@@ -3041,7 +3041,9 @@ class TestUpdatePromptNameConflict:
         conflicting.id = 99
         conflicting.visibility = "private"
 
-        with (patch("mcpgateway.services.prompt_service.get_for_update") as mock_gfu,):
+        with (
+            patch("mcpgateway.services.prompt_service.get_for_update") as mock_gfu,
+        ):
             mock_gfu.side_effect = [existing, conflicting]
 
             upd = PromptUpdate(name="new-name")
@@ -3953,3 +3955,52 @@ class TestFetchGatewayPromptRegistryPath:
             result = await service._fetch_gateway_prompt_result(prompt, None, meta_data=None)
 
         assert result.description == "from fallback"
+
+    @pytest.mark.asyncio
+    async def test_fetch_gateway_prompt_sse_arm_uses_mcp_proxy_client_with_sse_transport(self):
+        """SSE fallback arm routes through mcp_proxy_client(transport="sse") and forwards client.session."""
+        # Standard
+        from types import SimpleNamespace
+
+        # First-Party
+        from mcpgateway.config import settings
+        from mcpgateway.services.prompt_service import PromptService
+        from mcpgateway.utils.gateway_access import build_gateway_auth_headers
+
+        service = PromptService()
+        prompt = self._build_gateway_prompt()
+        prompt.gateway.transport = "sse"
+
+        remote_result = MagicMock()
+        remote_result.messages = []
+        remote_result.description = "from sse fallback"
+
+        sentinel_session = MagicMock(name="upstream_session")
+        captured_kwargs: dict[str, Any] = {}
+
+        class _FakeMCPProxyClient:
+            async def __aenter__(self):
+                return SimpleNamespace(session=sentinel_session)
+
+            async def __aexit__(self, *_exc):
+                return False
+
+        def fake_mcp_proxy_client(*_args, **kwargs):
+            captured_kwargs.update(kwargs)
+            return _FakeMCPProxyClient()
+
+        get_prompt_mock = AsyncMock(return_value=remote_result)
+        with (
+            patch("mcpgateway.services.prompt_service._downstream_session_id_from_request", return_value=None),
+            patch("mcpgateway.services.prompt_service.mcp_proxy_client", side_effect=fake_mcp_proxy_client),
+            patch("mcpgateway.services.prompt_service._get_prompt_with_meta", get_prompt_mock),
+        ):
+            result = await service._fetch_gateway_prompt_result(prompt, None, meta_data=None)
+
+        assert captured_kwargs["transport"] == "sse"
+        assert captured_kwargs["timeout"] == settings.health_check_timeout
+        assert captured_kwargs["url"] == "http://gateway.example.com/mcp"
+        assert captured_kwargs["headers"] == build_gateway_auth_headers(prompt.gateway)
+        get_prompt_mock.assert_awaited_once()
+        assert get_prompt_mock.await_args.args[0] is sentinel_session
+        assert result.description == "from sse fallback"
