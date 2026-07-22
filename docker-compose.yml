@@ -1442,8 +1442,8 @@ services:
     networks: [mcpnet]
     ports:
       - "8888:9080"    # Map host port 8888 to container port 9080 (server's default port)
-    # Use dual mode for both SSE (/sse) and Streamable HTTP (/http) endpoints
-    command: ["-transport=dual", "-listen=0.0.0.0:9080", "-log-level=info"]
+    # Server now uses --protocol flag for MCP version selection (defaults to 2025-11-25)
+    # Removed obsolete -transport, -listen, -log-level flags (upstream CLI changed)
 
   ###############################################################################
   # Auto-registration service - registers fast_time_server with gateway
