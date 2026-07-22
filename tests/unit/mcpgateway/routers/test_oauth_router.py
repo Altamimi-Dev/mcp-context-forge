@@ -2816,7 +2816,7 @@ class TestFetchToolsAfterOAuthGatewayConnectionError:
 
             from mcpgateway.routers.oauth_router import fetch_tools_after_oauth
 
-            with patch("mcpgateway.routers.oauth_router.token_scoping_middleware._check_resource_team_ownership", return_value=True):
+            with patch("mcpgateway.routers.oauth_router.token_scoping_middleware._check_resource_team_ownership", return_value=ResourceOwnershipResult.ALLOWED):
                 with pytest.raises(HTTPException) as exc_info:
                     await fetch_tools_after_oauth(
                         gateway_id="gw-abc",
