@@ -37,7 +37,6 @@ async def test_default_transport_is_streamablehttp_and_mode_comes_from_settings(
 
     with (
         patch("mcpgateway.utils.mcp_proxy_client.streamable_http_client", return_value=transport_acm) as shc,
-        patch("mcpgateway.utils.mcp_proxy_client.httpx2"),
         patch("mcpgateway.utils.mcp_proxy_client.Client", client_cls),
     ):
         async with mcp_proxy_client(_URL, headers=_HEADERS) as client:
@@ -59,7 +58,6 @@ async def test_explicit_mode_is_threaded_into_client() -> None:
 
     with (
         patch("mcpgateway.utils.mcp_proxy_client.streamable_http_client", return_value=MagicMock()),
-        patch("mcpgateway.utils.mcp_proxy_client.httpx2"),
         patch("mcpgateway.utils.mcp_proxy_client.Client", client_cls),
     ):
         async with mcp_proxy_client(_URL, mode="legacy"):
@@ -104,7 +102,6 @@ async def test_explicit_streamablehttp_transport_matches_default_path() -> None:
     with (
         patch("mcpgateway.utils.mcp_proxy_client.streamable_http_client", return_value=transport_acm) as shc,
         patch("mcpgateway.utils.mcp_proxy_client.sse_client") as sse_mock,
-        patch("mcpgateway.utils.mcp_proxy_client.httpx2"),
         patch("mcpgateway.utils.mcp_proxy_client.Client", client_cls),
     ):
         async with mcp_proxy_client(_URL, transport="streamablehttp"):
@@ -114,3 +111,27 @@ async def test_explicit_streamablehttp_transport_matches_default_path() -> None:
     sse_mock.assert_not_called()
     client_cls.assert_called_once()
     assert client_cls.call_args.args[0] is transport_acm
+
+
+@pytest.mark.asyncio
+async def test_default_factory_path_constructs_valid_four_param_timeout() -> None:
+    """Given no httpx_client_factory, when the client is built, then the
+    default httpx2.AsyncClient is constructed with a fully-specified
+    four-parameter httpx2.Timeout (httpx2 rejects partial Timeouts)."""
+    client_cls = MagicMock(name="Client")
+    transport_acm = MagicMock(name="streamable_http_acm")
+
+    with (
+        patch("mcpgateway.utils.mcp_proxy_client.streamable_http_client", return_value=transport_acm) as shc,
+        patch("mcpgateway.utils.mcp_proxy_client.Client", client_cls),
+    ):
+        async with mcp_proxy_client(_URL, timeout=30.0):
+            pass
+
+    shc.assert_called_once()
+    http_client = shc.call_args.kwargs["http_client"]
+    timeout = http_client.timeout
+    assert timeout.connect == 10.0  # min(30.0, 10.0)
+    assert timeout.read == 30.0  # max(30.0, 30.0)
+    assert timeout.write == settings.httpx_write_timeout
+    assert timeout.pool == settings.httpx_pool_timeout

@@ -104,6 +104,8 @@ async def mcp_proxy_client(
             timeout=httpx2.Timeout(
                 connect=connect_timeout,
                 read=read_timeout,
+                write=settings.httpx_write_timeout,
+                pool=settings.httpx_pool_timeout,
             ),
         )
 
