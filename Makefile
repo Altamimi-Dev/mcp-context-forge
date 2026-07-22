@@ -7424,8 +7424,7 @@ DETECT_SECRETS_FILES_EXCLUDE := '(?x)( \
   |uv\.lock$$                  \
   |go\.sum$$                   \
   |mcpgateway/sri_hashes\.json$$ \
-  |.secrets.baseline$$ \
-)'
+  )|^.secrets.baseline$$'
 
 # --diff-filter=d EXCLUDES delete files
 DETECT_SECRETS_PATH ?= $(shell git diff main --name-only --diff-filter=d)
@@ -7442,15 +7441,20 @@ detect-secrets-scan: uv                      ## 🔍  detect-secrets scan for se
 		--use-all-plugins \
 		--exclude-files $(DETECT_SECRETS_FILES_EXCLUDE) \
 		$(DETECT_SECRETS_PATH) && \
-	jq -s '{ \
-		exclude: .[0].exclude, \
+	jq --arg exclude $(DETECT_SECRETS_FILES_EXCLUDE) -s '\
+		.[2] as $$gitfiles | \
+		{ \
+		exclude: { files: $$exclude, lines: null }, \
 		generated_at: .[1].generated_at, \
 		plugins_used: .[1].plugins_used, \
-		results: (.[0].results + .[1].results), \
+		results: ( \
+			(.[0].results | to_entries | [ .[]|select( ([.key] | inside($$gitfiles))) ] | from_entries) \
+			+ .[1].results), \
 		version: .[1].version, \
 		word_list: .[1].word_list \
-	}' \
+		}' \
 		.secrets.baseline $${tmpfile} \
+		<(git ls-files | jq -R -s 'split("\n")[:-1]') \
 		> $${outfile} && \
 	cp $${outfile} .secrets.baseline
 	@echo "📊 detect-secrets findings report:"
