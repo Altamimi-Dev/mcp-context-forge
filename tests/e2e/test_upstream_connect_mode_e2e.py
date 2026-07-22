@@ -32,11 +32,11 @@ https://github.com/IBM/contextforge-examples/issues/11):
   (``supported: ["2026-07-28"]``). Modern mode is handshake-less.
 - ``server/discover`` with the SEP-2575 namespaced ``_meta`` envelope
   (``io.modelcontextprotocol/protocolVersion`` etc.) -> HTTP 200
-  DiscoverResult with ``supportedVersions: ["2026-07-28"]``, top-level
-  ``serverInfo``, and the ``cacheScope: "private"`` / ``ttlMs: 0``
-  directives the 2026-07-28 wire models require — stateless, no session
-  required. (Pre-fix, ``serverInfo`` was nested under ``_meta`` and the
-  cache directives were missing, breaking SDK validation.)
+  DiscoverResult with ``supportedVersions: ["2026-07-28"]``, ``serverInfo``
+  in the spec-canonical ``_meta.io.modelcontextprotocol/serverInfo`` slot
+  (plus a top-level copy for mcp_types SDK interop), and the
+  ``cacheScope: "private"`` / ``ttlMs: 0`` directives the 2026-07-28 wire
+  requires — stateless, no session required.
 - Legacy upstream (8888): unchanged — ``server/discover`` errors, legacy
   ``initialize`` at 2025-11-25 is accepted, calls succeed in both connect
   modes.
@@ -476,10 +476,12 @@ class TestStrictServerBehaviorMatrix:
         assert response.status_code == 200
         result = response.json()["result"]
         assert result["supportedVersions"] == [MODERN_VERSION]
-        # Post-issue-#11 shape: serverInfo is a top-level field (as
-        # mcp_types.DiscoverResult requires) and the 2026-07-28 cache
-        # directives are present.
-        assert result["serverInfo"]["name"] == "fast-time-server"
+        # Spec-canonical shape (draft spec schema/draft/schema.ts): serverInfo
+        # lives in the namespaced _meta envelope. The fixed image ALSO emits a
+        # top-level serverInfo for mcp_types (SDK 2.0.0b2) interop, and the
+        # required 2026-07-28 cache directives.
+        assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "fast-time-server"
+        assert result["serverInfo"]["name"] == "fast-time-server"  # SDK-interop copy (issue #11)
         assert result["cacheScope"] == "private"
         assert result["ttlMs"] == 0
 
