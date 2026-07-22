@@ -21,9 +21,9 @@ subprocesses (own sqlite DB, own JWT secret, SSRF localhost allowances) — the
 compose stack's gateway containers are intentionally NOT used.
 
 Strict-server behavior matrix (locked empirically via curl, 2026-07-22;
-image ``cfex-mcp-fast-time-server`` @ ``sha256:2f085782`` — now STRICT
-modern-only, the legacy handshake path is fully removed; the remaining
-upstream interop gaps are tracked in
+image ``cfex-mcp-fast-time-server`` — STRICT modern-only, the legacy
+handshake path is fully removed. The interop gaps originally found here
+were fixed upstream; see
 https://github.com/IBM/contextforge-examples/issues/11):
 
 - ``/version`` reports ``mcp_versions: ["2026-07-28"]`` only, ``strict: true``.
@@ -32,10 +32,11 @@ https://github.com/IBM/contextforge-examples/issues/11):
   (``supported: ["2026-07-28"]``). Modern mode is handshake-less.
 - ``server/discover`` with the SEP-2575 namespaced ``_meta`` envelope
   (``io.modelcontextprotocol/protocolVersion`` etc.) -> HTTP 200
-  DiscoverResult with ``supportedVersions: ["2026-07-28"]`` — stateless, no
-  session required. GAP 1 (issue #11): ``serverInfo`` is nested under
-  ``_meta.io.modelcontextprotocol/serverInfo`` instead of the top-level
-  field ``mcp_types.DiscoverResult`` (mcp 2.0.0b2) requires.
+  DiscoverResult with ``supportedVersions: ["2026-07-28"]``, top-level
+  ``serverInfo``, and the ``cacheScope: "private"`` / ``ttlMs: 0``
+  directives the 2026-07-28 wire models require — stateless, no session
+  required. (Pre-fix, ``serverInfo`` was nested under ``_meta`` and the
+  cache directives were missing, breaking SDK validation.)
 - Legacy upstream (8888): unchanged — ``server/discover`` errors, legacy
   ``initialize`` at 2025-11-25 is accepted, calls succeed in both connect
   modes.
@@ -43,12 +44,10 @@ https://github.com/IBM/contextforge-examples/issues/11):
 Empirical outcome of the negotiation modes against these upstreams
 (mcp 2.0.0b2, verified by wire capture):
 
-- ``auto`` vs strict: FAILS. The ``server/discover`` probe IS answered, but
-  Gap 1 (issue #11) fails SDK validation, so the SDK falls back to the
-  legacy ``initialize`` handshake at 2025-11-25 — which the modern-only
-  image now also rejects (``-32602``). Gateway registration surfaces this
-  as HTTP 502 "Unsupported protocol version". See the ``xfail`` tests
-  below; they XPASS once the image is fixed.
+- ``auto`` vs strict: SUCCEEDS. The ``server/discover`` probe returns a
+  valid DiscoverResult, the SDK adopts 2026-07-28, and federated tool
+  calls through the pooled registry path work end-to-end — the headline
+  proof of the ``mcp.client.Client`` migration.
 - ``auto`` vs legacy: ``server/discover`` errors, legacy fallback by
   design; the federated call succeeds.
 - ``legacy`` vs legacy: succeeds — the pre-migration behavior is fully
@@ -58,10 +57,6 @@ Empirical outcome of the negotiation modes against these upstreams
   proposes exactly ``2025-11-25`` in ``initialize`` and never sends
   ``server/discover``, so the modern-only image rejects the handshake with
   ``-32602``, surfaced by the gateway as HTTP 502 at registration.
-- GAP 2 (issue #11): even with an explicit ``mode="2026-07-28"`` pin, the
-  strict server's modern ``ListToolsResult`` lacks the SDK-required
-  ``cacheScope``/``ttlMs`` fields, so ``tools/list`` fails SDK validation
-  after an otherwise-successful modern handshake.
 """
 
 # Future
@@ -481,13 +476,12 @@ class TestStrictServerBehaviorMatrix:
         assert response.status_code == 200
         result = response.json()["result"]
         assert result["supportedVersions"] == [MODERN_VERSION]
-        # GAP 1 (contextforge-examples#11): the strict image nests serverInfo
-        # under the namespaced _meta envelope instead of the top-level field
-        # mcp_types.DiscoverResult (mcp 2.0.0b2) requires. This CURRENT shape
-        # is pinned here as a documented fact; the gateway-level negotiation
-        # it breaks is covered by the issue #11 xfail tests below.
-        assert "serverInfo" not in result
-        assert result["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "fast-time-server"
+        # Post-issue-#11 shape: serverInfo is a top-level field (as
+        # mcp_types.DiscoverResult requires) and the 2026-07-28 cache
+        # directives are present.
+        assert result["serverInfo"]["name"] == "fast-time-server"
+        assert result["cacheScope"] == "private"
+        assert result["ttlMs"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -499,25 +493,13 @@ class TestStrictServerBehaviorMatrix:
 class TestAutoModeGateway:
     """Default (``MCP_CLIENT_CONNECT_MODE=auto``) federation proofs."""
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Upstream gap (https://github.com/IBM/contextforge-examples/issues/11): the strict image's "
-            "DiscoverResult nests serverInfo under _meta.io.modelcontextprotocol/serverInfo (Gap 1), failing "
-            "SDK validation; the legacy initialize fallback is then also rejected by the modern-only image "
-            "(-32602), and even a pinned 2026-07-28 handshake cannot list tools (Gap 2: ListToolsResult lacks "
-            "cacheScope/ttlMs). Registration surfaces HTTP 502 'Unsupported protocol version'. XPASSes once "
-            "the image is fixed."
-        ),
-    )
     async def test_auto_mode_federated_call_strict_upstream_succeeds(self, gateway_auto: GatewayHandle) -> None:
-        """(a) INTENDED end state: a tool call federated through the POOLED
+        """(a) HEADLINE proof: a tool call federated through the POOLED
         registry path to the strict 2026-07-28 upstream SUCCEEDS in default
         auto mode, negotiated at the modern version.
 
-        Currently impossible — Gap 1 (issue #11) kills negotiation at
-        registration time, so this is xfail(strict=True); the body asserts
-        the intended end state and XPASSes once the image is fixed.
+        (Was xfail(strict=True) pending the contextforge-examples#11 image
+        fix; it XPASSed when the fixed image landed.)
         """
         federation = _register_upstream(gateway_auto, STRICT_UPSTREAM_URL, f"e2e-strict-auto-{uuid.uuid4().hex[:8]}")
         result = await _call_federated_time_tool(gateway_auto, federation)
@@ -610,20 +592,11 @@ class TestWireLevelNegotiation:
 
     async def test_auto_mode_probes_server_discover_first(self) -> None:
         """Auto mode's first frame to the strict upstream is a ``server/discover``
-        probe stamped at 2026-07-28 — the modern negotiation path is exercised.
-
-        The negotiation itself currently FAILS (Gap 1, issue #11: the
-        DiscoverResult fails SDK validation and the legacy initialize fallback
-        is rejected by the modern-only image), so the client session is
-        expected to raise; the frames are recorded either way and are what
-        this test asserts on.
-        """
+        probe stamped at 2026-07-28 — the modern negotiation path is exercised
+        and (post issue #11) completes successfully."""
         recorder = _WireRecorder()
         async with recorder.factory() as http_client:
-            try:
-                async with Client(streamable_http_client(STRICT_UPSTREAM_URL, http_client=http_client), mode="auto"):
-                    pass
-            except Exception:  # noqa: BLE001 — negotiation failure is expected until issue #11 is fixed; frames are what matter
+            async with Client(streamable_http_client(STRICT_UPSTREAM_URL, http_client=http_client), mode="auto"):
                 pass
         methods = recorder.request_methods()
         assert methods, "no frames recorded"
@@ -659,22 +632,13 @@ class TestWireLevelNegotiation:
         assert initialize_response["error"]["code"] == -32602, f"modern-only strict image must reject the legacy handshake, got {initialize_response}"
         assert initialize_response["error"]["data"]["supported"] == [MODERN_VERSION]
 
-    @pytest.mark.xfail(
-        strict=True,
-        reason=(
-            "Upstream gap (https://github.com/IBM/contextforge-examples/issues/11): the strict image's "
-            "DiscoverResult nests serverInfo under _meta.io.modelcontextprotocol/serverInfo (Gap 1), failing "
-            "SDK validation; with the modern-only image (sha256:2f085782) the legacy initialize fallback is "
-            "now ALSO rejected (-32602), so the bug is fatal to negotiation rather than a silent downgrade. "
-            "Auto mode cannot complete any negotiation with this strict image until the image is fixed."
-        ),
-    )
     async def test_auto_mode_negotiates_modern_version_with_strict_upstream(self) -> None:
-        """The intended end state: auto mode adopts 2026-07-28 with the strict
-        upstream (discover_result set, no legacy initialize fallback)."""
+        """Auto mode adopts 2026-07-28 with the strict upstream
+        (``discover_result`` set, no legacy initialize fallback) — the shipped
+        behavior since the contextforge-examples#11 image fix."""
         recorder = _WireRecorder()
         async with recorder.factory() as http_client:
             async with Client(streamable_http_client(STRICT_UPSTREAM_URL, http_client=http_client), mode="auto") as client:
                 session = client.session
                 assert session.discover_result is not None, "auto mode fell back to legacy initialize — modern negotiation did not complete"
-                assert session.negotiated_version == MODERN_VERSION
+                assert session.protocol_version == MODERN_VERSION
